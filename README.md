@@ -239,13 +239,16 @@ any Notion link, including older `notion.so` links.
 
 Open **Settings → Vault to Notion**:
 
-1. In **API token** ①, create a secret holding your token (or pick one you saved before).
+1. In **API token** ①, click **Change** and create a secret holding your token (or pick one
+   you saved before).
    Obsidian keeps it in its [secret storage](https://docs.obsidian.md/plugins/guides/secret-storage),
    not in the plugin's settings file, and other plugins can reuse the same secret.
 2. Choose **Publish as** ②: *Page tree* or *Database*.
 3. Paste the link from step 3 into **Root page** ③ (page tree) or **Database** (database).
 4. Click **Test** ④. You should see *Connected to "Obsidian Vault"*. If not, the message
    explains what to fix — see also [Troubleshooting](#troubleshooting).
+
+![Vault to Notion settings in Obsidian](docs/images/obsidian-settings.png)
 
 In *Database* mode, a **Columns** section with the tag and folder options appears below
 **Test connection**.
