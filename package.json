@@ -1,6 +1,6 @@
 {
   "name": "vault-to-notion",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Publish Obsidian notes to a Notion database.",
   "main": "main.js",
   "type": "module",
