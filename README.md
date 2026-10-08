@@ -5,7 +5,7 @@ database — and keep them updated in place.
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Notion API](https://img.shields.io/badge/Notion%20API-2026--03--11-black.svg)](https://developers.notion.com/reference/versioning)
-[![Obsidian](https://img.shields.io/badge/Obsidian-%E2%89%A5%201.5.7-7c3aed.svg)](https://obsidian.md)
+[![Obsidian](https://img.shields.io/badge/Obsidian-%E2%89%A5%201.11.4-7c3aed.svg)](https://obsidian.md)
 ![Platforms](https://img.shields.io/badge/platforms-desktop%20%7C%20mobile-lightgrey.svg)
 
 **Your vault in Obsidian → the same structure in Notion** (page tree mode):
@@ -96,7 +96,7 @@ frontmatter), so it travels with the note across devices.
 
 ## Requirements
 
-- Obsidian **1.5.7** or later (desktop or mobile).
+- Obsidian **1.11.4** or later (desktop or mobile) — the first version with secret storage.
 - A Notion account, and a Notion **API token** — see [step 1](#1-create-a-notion-api-token).
 
 ## Installation
@@ -239,13 +239,13 @@ any Notion link, including older `notion.so` links.
 
 Open **Settings → Vault to Notion**:
 
-1. Paste the token into **API token** ①.
+1. In **API token** ①, create a secret holding your token (or pick one you saved before).
+   Obsidian keeps it in its [secret storage](https://docs.obsidian.md/plugins/guides/secret-storage),
+   not in the plugin's settings file, and other plugins can reuse the same secret.
 2. Choose **Publish as** ②: *Page tree* or *Database*.
 3. Paste the link from step 3 into **Root page** ③ (page tree) or **Database** (database).
 4. Click **Test** ④. You should see *Connected to "Obsidian Vault"*. If not, the message
    explains what to fix — see also [Troubleshooting](#troubleshooting).
-
-![Vault to Notion settings in Obsidian](docs/images/obsidian-settings.png)
 
 In *Database* mode, a **Columns** section with the tag and folder options appears below
 **Test connection**.
@@ -254,7 +254,7 @@ In *Database* mode, a **Columns** section with the tag and folder options appear
 
 | Setting | Mode | Default | Description |
 | --- | --- | --- | --- |
-| API token | Both | — | Internal connection token or personal access token (`ntn_…`). |
+| API token | Both | — | The secret (in Obsidian's secret storage) that holds your internal connection token or personal access token (`ntn_…`). |
 | Publish as | Both | Page tree | *Page tree*: pages in the sidebar. *Database*: rows of a database. |
 | Root page | Page tree | — | The page your vault is published under. |
 | Database | Database | — | Database link, or a data source ID. |
@@ -282,8 +282,8 @@ Notion** ①:
 After the first publish, two properties are added to the note's frontmatter:
 
 ```yaml
-notion_id: 3f31581d-042a-81b6-bb3b-ccca9c300a63
-notion_url: https://app.notion.com/p/Root-note-3f31581d042a81b6bb3bccca9c300a63
+notion_id: 1a2b3c4d-5e6f-4a1b-9c2d-3e4f5a6b7c8d
+notion_url: https://app.notion.com/p/My-note-1a2b3c4d5e6f4a1b9c2d3e4f5a6b7c8d
 ```
 
 `notion_id` links the note to its page — keep it to update the same page next time, or delete
@@ -335,6 +335,7 @@ publishing anything.
 
 | Message | Cause and fix |
 | --- | --- |
+| *Choose the secret that holds your Notion API token first* / *Set the Notion API token…* | No secret is selected in **API token**, or the selected secret is empty — for example on a new device, since secrets are not synced. Create or pick the secret again. |
 | *Notion could not find the root page / this database… + Add connection → "Obsidian"* | The connection has no access. Share the page or database with it ([step 3](#3-give-your-connection-access)). |
 | *This link is a page, not a database* | A page link was pasted in **Database**. Paste a database link, or switch **Publish as** to *Page tree*. |
 | *This database has 2 data sources* | Paste the data source ID instead (**•••** → **Manage data sources** → **Copy data source ID**). |
@@ -365,9 +366,11 @@ to read the page or database you configure and to create, update and move pages 
 plugin sends the content of the notes you publish — nothing else, and only when you publish.
 There is no telemetry and no other server involved.
 
-Your API token is stored in the plugin's `data.json` file inside your vault's `.obsidian`
-folder. If you sync or commit that folder (for example with Git), exclude
-`.obsidian/plugins/vault-to-notion/data.json`.
+Your API token is kept in Obsidian's
+[secret storage](https://docs.obsidian.md/plugins/guides/secret-storage) on this device, not in
+the plugin's `data.json`, so it does not end up in vault backups, sync or Git. Secret storage is
+not synced between devices: on another device, add the token once more in the settings.
+Tokens saved by earlier builds in `data.json` are moved into secret storage automatically.
 
 ## Development
 
@@ -375,6 +378,7 @@ folder. If you sync or commit that folder (for example with Git), exclude
 npm install
 npm run dev     # rebuild main.js on every change
 npm run build   # type-check and build for production
+npm run lint    # Obsidian's official lint rules (eslint-plugin-obsidianmd)
 ```
 
 Copy `main.js` and `manifest.json` into `<vault>/.obsidian/plugins/vault-to-notion/` and reload

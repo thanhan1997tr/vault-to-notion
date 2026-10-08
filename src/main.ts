@@ -3,7 +3,13 @@ import { ICON_ID, registerIcons } from "icons";
 import { confirm, FolderSuggestModal } from "modals";
 import { NotionError } from "notion-api";
 import { FM_URL, PublishStatus, Publisher, SyncState } from "publisher";
-import { DEFAULT_SETTINGS, PluginSettings, SettingsTab } from "settings";
+import { DEFAULT_SETTINGS, PluginSettings, readToken, SettingsTab } from "settings";
+
+/** What data.json may contain, including keys from earlier builds that are migrated on load. */
+type StoredData = Partial<PluginSettings & SyncState> & { token?: string; folderPagesRoot?: string };
+
+/** Secret name used when moving a token out of data.json. */
+const LEGACY_TOKEN_SECRET = "notion-api-token";
 
 /** Ask before publishing a folder with more notes than this. */
 const CONFIRM_THRESHOLD = 20;
@@ -20,7 +26,7 @@ export default class VaultToNotionPlugin extends Plugin {
 
 		this.addRibbonIcon(ICON_ID, "Publish to Notion", () => {
 			const file = this.app.workspace.getActiveFile();
-			if (file?.extension === "md") this.publish(file);
+			if (file?.extension === "md") void this.publish(file);
 			else new Notice("Open a note to publish it to Notion.");
 		});
 
@@ -31,7 +37,7 @@ export default class VaultToNotionPlugin extends Plugin {
 			checkCallback: (checking) => {
 				const file = this.app.workspace.getActiveViewOfType(MarkdownView)?.file;
 				if (!file) return false;
-				if (!checking) this.publish(file);
+				if (!checking) void this.publish(file);
 				return true;
 			},
 		});
@@ -40,7 +46,7 @@ export default class VaultToNotionPlugin extends Plugin {
 			id: "publish-folder",
 			name: "Publish folder…",
 			icon: ICON_ID,
-			callback: () => new FolderSuggestModal(this.app, (folder) => this.publishFolder(folder)).open(),
+			callback: () => new FolderSuggestModal(this.app, (folder) => void this.publishFolder(folder)).open(),
 		});
 
 		this.addCommand({
@@ -48,7 +54,7 @@ export default class VaultToNotionPlugin extends Plugin {
 			name: "Open current note in Notion",
 			checkCallback: (checking) => {
 				const file = this.app.workspace.getActiveFile();
-				const url = file && this.app.metadataCache.getFileCache(file)?.frontmatter?.[FM_URL];
+				const url: unknown = file && this.app.metadataCache.getFileCache(file)?.frontmatter?.[FM_URL];
 				if (typeof url !== "string") return false;
 				if (!checking) window.open(url);
 				return true;
@@ -202,15 +208,15 @@ export default class VaultToNotionPlugin extends Plugin {
 	}
 
 	private checkConfigured(): boolean {
-		const { token, mode, rootPage, database } = this.settings;
-		if (token && (mode === "pages" ? rootPage : database)) return true;
+		const { mode, rootPage, database } = this.settings;
+		if (readToken(this.app, this.settings) && (mode === "pages" ? rootPage : database)) return true;
 		const what = mode === "pages" ? "root page" : "database";
 		new Notice(`Set the Notion API token and ${what} in the Vault to Notion settings.`);
 		return false;
 	}
 
 	async loadSettings() {
-		const data = (await this.loadData()) ?? {};
+		const data = ((await this.loadData()) as StoredData | null) ?? {};
 		this.state = {
 			fingerprints: data.fingerprints ?? {},
 			folderPages: data.folderPages ?? {},
@@ -226,6 +232,29 @@ export default class VaultToNotionPlugin extends Plugin {
 		if (data.mode === undefined && data.database) settings.mode = "database";
 		if (data.rootPage === undefined && data.folderPagesRoot) settings.rootPage = data.folderPagesRoot;
 		this.settings = settings;
+
+		// Earlier builds kept the token in plain text in data.json. Move it into secret storage;
+		// saving drops the plain-text copy, and only happens once the secret is stored.
+		if (typeof data.token === "string" && data.token && !settings.tokenSecret) {
+			settings.tokenSecret = this.storeLegacyToken(data.token);
+			await this.saveSettings();
+		}
+	}
+
+	/** Saves a token into secret storage, reusing a secret that already holds the same value. */
+	private storeLegacyToken(token: string): string {
+		const storage = this.app.secretStorage;
+		for (const id of [LEGACY_TOKEN_SECRET, `${LEGACY_TOKEN_SECRET}-2`]) {
+			const existing = storage.getSecret(id);
+			if (existing === token) return id;
+			if (existing === null) {
+				storage.setSecret(id, token);
+				return id;
+			}
+		}
+		const id = `${LEGACY_TOKEN_SECRET}-${Date.now()}`;
+		storage.setSecret(id, token);
+		return id;
 	}
 
 	async saveSettings() {

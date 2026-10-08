@@ -1,7 +1,7 @@
 import { App, getFrontMatterInfo, TFile } from "obsidian";
 import { FORMAT_VERSION, toNotionMarkdown } from "markdown";
-import { Json, NotionApi, NotionError, parseNotionId } from "notion-api";
-import type { PluginSettings } from "settings";
+import { Body, DataSource, NotionApi, NotionError, Page, parseNotionId, RichText } from "notion-api";
+import { PluginSettings, readToken } from "settings";
 
 export const FM_ID = "notion_id";
 export const FM_URL = "notion_url";
@@ -69,7 +69,7 @@ export class Publisher {
 		private readonly settings: PluginSettings,
 		private readonly state: SyncState,
 	) {
-		this.api = new NotionApi(settings.token);
+		this.api = new NotionApi(readToken(app, settings));
 	}
 
 	/** Checks the token and the destination. Safe to call more than once. */
@@ -132,7 +132,7 @@ export class Publisher {
 		const existing = existingId ? await this.findPage(existingId, target, parentId, progress) : null;
 		if (existingId && !existing) delete this.state.fingerprints[existingId];
 
-		let page: Json;
+		let page: Page;
 		if (existing) {
 			progress("Updating page…");
 			page = await this.api.updatePage(existing.id, { properties, cover });
@@ -153,7 +153,7 @@ export class Publisher {
 
 		// `public_url` is set when the page is published to the web; links are not stable IDs.
 		const url: string = page.public_url ?? page.url;
-		await this.app.fileManager.processFrontMatter(file, (fm) => {
+		await this.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
 			fm[FM_ID] = page.id;
 			fm[FM_URL] = url;
 		});
@@ -182,8 +182,8 @@ export class Publisher {
 	 * is needed (deleted, in the trash, or created by the other mode). In page tree mode, a page
 	 * found under another folder page is moved, so notes moved in the vault keep their link.
 	 */
-	private async findPage(pageId: string, target: Target, parentId: string, progress: ProgressFn): Promise<Json | null> {
-		let page: Json;
+	private async findPage(pageId: string, target: Target, parentId: string, progress: ProgressFn): Promise<Page | null> {
+		let page: Page;
 		try {
 			page = await this.api.getPage(pageId);
 		} catch (err) {
@@ -196,7 +196,7 @@ export class Publisher {
 			return parseNotionId(page.parent?.data_source_id ?? "") === parseNotionId(parentId) ? page : null;
 		}
 		if (page.parent?.type !== "page_id") return null;
-		if (parseNotionId(page.parent.page_id) !== parseNotionId(parentId)) {
+		if (parseNotionId(page.parent.page_id ?? "") !== parseNotionId(parentId)) {
 			progress("Moving page to its folder…");
 			await this.api.movePage(page.id, parentId);
 		}
@@ -218,10 +218,10 @@ export class Publisher {
 		const id = parseNotionId(this.settings.database);
 		if (!id) throw new Error("The database link in settings is not valid.");
 
-		let dataSource: Json;
+		let dataSource: DataSource;
 		try {
 			const database = await this.api.getDatabase(id);
-			const sources: Json[] = database.data_sources ?? [];
+			const sources = database.data_sources ?? [];
 			if (sources.length !== 1) {
 				throw new Error(
 					`This database has ${sources.length} data sources. In Notion, open the database's ••• menu → ` +
@@ -245,7 +245,7 @@ export class Publisher {
 			});
 		}
 
-		const columns: Record<string, Json> = dataSource.properties;
+		const columns = dataSource.properties;
 		const titleName = Object.keys(columns).find((name) => columns[name].type === "title");
 		if (!titleName) throw new Error("The Notion database has no title column.");
 
@@ -255,9 +255,13 @@ export class Publisher {
 		}
 
 		const folderName = this.folderColumn();
-		const folderType = folderName ? columns[folderName]?.type : undefined;
-		if (folderName && folderType !== "select" && folderType !== "rich_text") {
-			throw new Error(`The database needs a select or text column named "${folderName}" to sync folders.`);
+		let folderType: DatabaseTarget["folderType"];
+		if (folderName) {
+			const type = columns[folderName]?.type;
+			if (type !== "select" && type !== "rich_text") {
+				throw new Error(`The database needs a select or text column named "${folderName}" to sync folders.`);
+			}
+			folderType = type;
 		}
 
 		const root = await this.resolveRootPage();
@@ -290,7 +294,7 @@ export class Publisher {
 			this.state.folderViews = {};
 			this.state.folderRoot = rootId;
 		}
-		const titleProperty = Object.values(root.properties ?? {}).find((p: Json) => p.type === "title") as Json;
+		const titleProperty = Object.values(root.properties ?? {}).find((p) => p.type === "title");
 		return { id: rootId, name: plainText(titleProperty?.title) || "Untitled" };
 	}
 
@@ -374,12 +378,12 @@ export class Publisher {
 		return this.settings.syncFolder ? this.settings.folderProperty.trim() : "";
 	}
 
-	private buildProperties(file: TFile, target: Target): Json {
+	private buildProperties(file: TFile, target: Target): Body {
 		const title = [{ type: "text", text: { content: file.basename } }];
 		// Pages outside a database only have a title.
 		if (target.mode === "pages") return { title: { title } };
 
-		const properties: Json = { [target.titleName]: { title } };
+		const properties: Body = { [target.titleName]: { title } };
 		const tagsName = this.tagsColumn();
 		if (tagsName) properties[tagsName] = { multi_select: this.readTags(file).map((name) => ({ name })) };
 
@@ -394,9 +398,12 @@ export class Publisher {
 	}
 
 	private readTags(file: TFile): string[] {
-		const raw = this.app.metadataCache.getFileCache(file)?.frontmatter?.tags;
+		const raw: unknown = this.app.metadataCache.getFileCache(file)?.frontmatter?.tags;
 		const list: unknown[] = Array.isArray(raw) ? raw : typeof raw === "string" ? raw.split(/[,\s]+/) : [];
-		const tags = list.map((tag) => toOptionName(String(tag ?? "").replace(/^#/, ""))).filter(Boolean);
+		const tags = list
+			.filter((tag): tag is string | number => typeof tag === "string" || typeof tag === "number")
+			.map((tag) => toOptionName(String(tag).replace(/^#/, "")))
+			.filter(Boolean);
 		return [...new Set(tags)];
 	}
 }
@@ -412,8 +419,8 @@ function connectionName(err: Error): string {
 	return name ? `"${name}"` : "your connection";
 }
 
-function plainText(richText: Json[] | undefined): string {
-	return (richText ?? []).map((t: Json) => t.plain_text).join("");
+function plainText(richText: RichText[] | undefined): string {
+	return (richText ?? []).map((t) => t.plain_text).join("");
 }
 
 /** Select option names cannot contain commas and are capped at 100 characters. */

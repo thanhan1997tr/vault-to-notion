@@ -86,13 +86,13 @@ function closesFence(line: string, marker: string): boolean {
 function convertText(text: string): string[] {
 	const spans: string[] = [];
 	const masked = text
-		.replace(/(`+)[^`\n]*?\1/g, (code) => `\u0000${spans.push(code) - 1}\u0000`)
+		.replace(/(`+)[^`\n]*?\1/g, (code) => `\uE000${spans.push(code) - 1}\uE000`)
 		// %% comments %% and HTML comments are private to the vault and must never be published.
 		.replace(/%%[\s\S]*?%%/g, "")
 		.replace(/<!--[\s\S]*?-->/g, "");
 
 	const lines = groupQuotes(normalizeIndentation(masked.split("\n")));
-	return lines.map((line) => line.replace(/\u0000(\d+)\u0000/g, (_, i) => spans[Number(i)]));
+	return lines.map((line) => line.replace(/\uE000(\d+)\uE000/g, (_, i) => spans[Number(i)]));
 }
 
 /** Notion nests blocks with tabs. Space indentation is converted using the note's indent unit. */
@@ -167,7 +167,7 @@ function convertLine(line: string): string {
 function convertInline(text: string): string {
 	// URLs are masked so that escaping below never alters them.
 	const urls: string[] = [];
-	const mask = (url: string) => `\u0001${urls.push(url) - 1}\u0001`;
+	const mask = (url: string) => `\uE001${urls.push(url) - 1}\uE001`;
 	return (
 		text
 			// Embeds and local files cannot be uploaded yet; leave a visible marker instead.
@@ -188,11 +188,11 @@ function convertInline(text: string): string {
 			.replace(/<mark>(.*?)<\/mark>/gi, '<span color="yellow_bg">$1</span>')
 			.replace(/<u>(.*?)<\/u>/gi, '<span underline="true">$1</span>')
 			.replace(/\]\((https?:[^)\s]+|mailto:[^)\s]+)\)/g, (_, url: string) => `](${mask(url)})`)
-			.replace(/https?:\/\/[^\s<>()\u0001]+/g, mask)
+			.replace(/https?:\/\/[^\s<>()\uE001]+/g, mask)
 			.replace(/</g, (lt, offset: number, all: string) => (ALLOWED_TAGS.test(all.slice(offset)) ? lt : "\\<"))
 			// A lone `~` is literal in Obsidian but would start strikethrough in Notion. (No
 			// lookbehind: it breaks on older mobile WebViews.)
 			.replace(/\\~|~+/g, (match) => (match === "~" ? "\\~" : match))
-			.replace(/\u0001(\d+)\u0001/g, (_, i) => urls[Number(i)])
+			.replace(/\uE001(\d+)\uE001/g, (_, i) => urls[Number(i)])
 	);
 }

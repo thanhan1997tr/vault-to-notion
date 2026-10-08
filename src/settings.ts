@@ -1,4 +1,4 @@
-import { App, Notice, PluginSettingTab, Setting } from "obsidian";
+import { App, Notice, PluginSettingTab, SecretComponent, Setting } from "obsidian";
 import type VaultToNotionPlugin from "main";
 import { Publisher } from "publisher";
 
@@ -6,7 +6,8 @@ export type PublishMode = "pages" | "database";
 
 export interface PluginSettings {
 	mode: PublishMode;
-	token: string;
+	/** Name of the secret in Obsidian's secret storage that holds the Notion token. */
+	tokenSecret: string;
 	/** Page tree: the page the vault is published under. Database: optional folder pages root. */
 	rootPage: string;
 	database: string;
@@ -20,7 +21,7 @@ export interface PluginSettings {
 
 export const DEFAULT_SETTINGS: PluginSettings = {
 	mode: "pages",
-	token: "",
+	tokenSecret: "",
 	rootPage: "",
 	database: "",
 	syncTags: false,
@@ -48,17 +49,16 @@ export class SettingsTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("API token")
-			.setDesc("An internal connection token (app.notion.com/developers/connections → Configuration) or a personal access token.")
-			.addText((text) => {
-				text.inputEl.type = "password";
-				text
-					.setPlaceholder("ntn_…")
-					.setValue(settings.token)
-					.onChange(async (value) => {
-						settings.token = value.trim();
-						await this.plugin.saveSettings();
-					});
-			});
+			.setDesc(
+				"Your Notion internal connection token or personal access token, kept in Obsidian's secret " +
+					"storage rather than in plugin data. Pick a saved secret or create one.",
+			)
+			.addComponent((el) =>
+				new SecretComponent(this.app, el).setValue(settings.tokenSecret).onChange(async (name) => {
+					settings.tokenSecret = name;
+					await this.plugin.saveSettings();
+				}),
+			);
 
 		new Setting(containerEl)
 			.setName("Publish as")
@@ -116,7 +116,7 @@ export class SettingsTab extends PluginSettingTab {
 			.setDesc("Optional. An image URL used as the cover of every published page.")
 			.addText((text) =>
 				text
-					.setPlaceholder("https://…")
+					.setPlaceholder("Image link")
 					.setValue(settings.coverUrl)
 					.onChange(async (value) => {
 						settings.coverUrl = value.trim();
@@ -192,7 +192,7 @@ export class SettingsTab extends PluginSettingTab {
 			.setDesc(desc)
 			.addText((text) =>
 				text
-					.setPlaceholder("https://app.notion.com/p/…")
+					.setPlaceholder("Paste a Notion link")
 					.setValue(this.plugin.settings[key])
 					.onChange(async (value) => {
 						this.plugin.settings[key] = value.trim();
@@ -203,7 +203,7 @@ export class SettingsTab extends PluginSettingTab {
 }
 
 async function testConnection(app: App, settings: PluginSettings): Promise<string> {
-	if (!settings.token) return "Enter an API token first.";
+	if (!readToken(app, settings)) return "Choose the secret that holds your Notion API token first.";
 	try {
 		const state = { fingerprints: {}, folderPages: {}, folderViews: {}, folderRoot: "" };
 		const target = await new Publisher(app, settings, state).prepare();
@@ -211,4 +211,9 @@ async function testConnection(app: App, settings: PluginSettings): Promise<strin
 	} catch (err) {
 		return `Connection failed: ${err instanceof Error ? err.message : String(err)}`;
 	}
+}
+
+/** The Notion token from Obsidian's secret storage, or "" when none is set. */
+export function readToken(app: App, settings: PluginSettings): string {
+	return (settings.tokenSecret && app.secretStorage.getSecret(settings.tokenSecret)) || "";
 }
