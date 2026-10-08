@@ -10,7 +10,7 @@ export class FolderSuggestModal extends FuzzySuggestModal<TFolder> {
 	}
 
 	getItems(): TFolder[] {
-		return this.app.vault.getAllLoadedFiles().filter((f): f is TFolder => f instanceof TFolder);
+		return this.app.vault.getAllFolders(true);
 	}
 
 	getItemText(folder: TFolder): string {

@@ -109,8 +109,9 @@ export class Publisher {
 		const content = await this.app.vault.read(file);
 		const body = content.slice(getFrontMatterInfo(content).contentStart);
 		const properties = this.buildProperties(file, target);
-		const cover = this.settings.coverUrl
-			? { type: "external", external: { url: this.settings.coverUrl } }
+		const coverUrl = this.settings.coverUrl.trim();
+		const cover = coverUrl
+			? { type: "external", external: { url: coverUrl } }
 			: undefined;
 
 		const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter;

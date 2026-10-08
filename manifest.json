@@ -2,7 +2,7 @@
 	"id": "vault-to-notion",
 	"name": "Vault to Notion",
 	"version": "1.0.0",
-	"minAppVersion": "1.11.4",
+	"minAppVersion": "1.13.0",
 	"description": "Publish notes to Notion as a page tree that mirrors your vault, or as rows of a database, and keep them updated in place.",
 	"author": "An Tran Solutions",
 	"isDesktopOnly": false

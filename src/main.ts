@@ -1,4 +1,4 @@
-import { MarkdownView, Notice, Plugin, TFile, TFolder } from "obsidian";
+import { MarkdownView, Notice, Plugin, TFile, TFolder, Vault } from "obsidian";
 import { ICON_ID, registerIcons } from "icons";
 import { confirm, FolderSuggestModal } from "modals";
 import { NotionError } from "notion-api";
@@ -124,11 +124,12 @@ export default class VaultToNotionPlugin extends Plugin {
 			return;
 		}
 
-		const prefix = folder.isRoot() ? "" : folder.path + "/";
-		const files = this.app.vault
-			.getMarkdownFiles()
-			.filter((file) => file.path.startsWith(prefix))
-			.sort((a, b) => compareVaultOrder(a.path, b.path));
+		// Only the chosen folder is walked, so the plugin never lists the rest of the vault.
+		const files: TFile[] = [];
+		Vault.recurseChildren(folder, (file) => {
+			if (file instanceof TFile && file.extension === "md") files.push(file);
+		});
+		files.sort((a, b) => compareVaultOrder(a.path, b.path));
 		const label = folder.isRoot() ? "the vault" : `"${folder.path}"`;
 
 		if (files.length === 0) {

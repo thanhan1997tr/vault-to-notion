@@ -1,4 +1,4 @@
-import { App, Notice, PluginSettingTab, SecretComponent, Setting } from "obsidian";
+import { App, Notice, PluginSettingTab, SecretComponent, SettingDefinitionItem } from "obsidian";
 import type VaultToNotionPlugin from "main";
 import { Publisher } from "publisher";
 
@@ -34,6 +34,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 
 const ACCESS_HINT = "With an internal connection, give it access: ••• → Connections → + Add connection.";
 
+
 export class SettingsTab extends PluginSettingTab {
 	constructor(
 		app: App,
@@ -42,163 +43,121 @@ export class SettingsTab extends PluginSettingTab {
 		super(app, plugin);
 	}
 
-	display(): void {
-		const { containerEl } = this;
+	/** @see https://docs.obsidian.md/Plugins/User+interface/Settings */
+	getSettingDefinitions(): SettingDefinitionItem<keyof PluginSettings>[] {
 		const settings = this.plugin.settings;
-		containerEl.empty();
+		const isDatabase = () => settings.mode === "database";
 
-		new Setting(containerEl)
-			.setName("API token")
-			.setDesc(
-				"Your Notion internal connection token or personal access token, kept in Obsidian's secret " +
+		return [
+			{
+				name: "API token",
+				desc:
+					"Your Notion internal connection token or personal access token, kept in Obsidian's secret " +
 					"storage rather than in plugin data. Pick a saved secret or create one.",
-			)
-			.addComponent((el) =>
-				new SecretComponent(this.app, el).setValue(settings.tokenSecret).onChange(async (name) => {
-					settings.tokenSecret = name;
-					await this.plugin.saveSettings();
-				}),
-			);
-
-		new Setting(containerEl)
-			.setName("Publish as")
-			.setDesc(
-				settings.mode === "pages"
-					? "Page tree: folders and notes become pages in the Notion sidebar, like your vault."
-					: "Database: notes become rows of a database you can filter and sort.",
-			)
-			.addDropdown((dropdown) =>
-				dropdown
-					.addOption("pages", "Page tree")
-					.addOption("database", "Database")
-					.setValue(settings.mode)
-					.onChange(async (value) => {
-						settings.mode = value as PublishMode;
-						await this.plugin.saveSettings();
-						this.display();
-					}),
-			);
-
-		if (settings.mode === "pages") {
-			this.addLinkSetting(
-				"Root page",
-				`The Notion page your vault is published under (••• → Copy link). ${ACCESS_HINT}`,
-				"rootPage",
-			);
-		} else {
-			this.addLinkSetting(
-				"Database",
-				`The database link (••• → Copy link) or a data source ID. ${ACCESS_HINT}`,
-				"database",
-			);
-		}
-
-		new Setting(containerEl)
-			.setName("Test connection")
-			.setDesc("Checks the token and that Notion can find what you linked above.")
-			.addButton((button) =>
-				button.setButtonText("Test").onClick(async () => {
-					button.setDisabled(true);
-					try {
-						new Notice(await testConnection(this.app, settings));
-					} finally {
-						button.setDisabled(false);
-					}
-				}),
-			);
-
-		if (settings.mode === "database") this.displayDatabaseSettings();
-
-		new Setting(containerEl).setName("Publishing").setHeading();
-
-		new Setting(containerEl)
-			.setName("Cover image URL")
-			.setDesc("Optional. An image URL used as the cover of every published page.")
-			.addText((text) =>
-				text
-					.setPlaceholder("Image link")
-					.setValue(settings.coverUrl)
-					.onChange(async (value) => {
-						settings.coverUrl = value.trim();
-						await this.plugin.saveSettings();
-					}),
-			);
-
-		new Setting(containerEl).setName("Copy link after publishing").addToggle((toggle) =>
-			toggle.setValue(settings.copyLink).onChange(async (value) => {
-				settings.copyLink = value;
-				await this.plugin.saveSettings();
-			}),
-		);
+				aliases: ["notion token", "secret", "integration"],
+				// Secrets have no declarative control yet, so this row is rendered by hand.
+				render: (setting) => {
+					setting.addComponent((el) =>
+						new SecretComponent(this.app, el).setValue(settings.tokenSecret).onChange(async (name) => {
+							settings.tokenSecret = name;
+							await this.plugin.saveSettings();
+						}),
+					);
+				},
+			},
+			{
+				name: "Publish as",
+				desc: "Page tree: folders and notes become pages in the Notion sidebar. Database: notes become rows you can filter and sort.",
+				control: { type: "dropdown", key: "mode", options: { pages: "Page tree", database: "Database" } },
+			},
+			{
+				name: "Root page",
+				desc: `The Notion page your vault is published under (••• → Copy link). ${ACCESS_HINT}`,
+				visible: () => !isDatabase(),
+				control: { type: "text", key: "rootPage", placeholder: "Paste a Notion link" },
+			},
+			{
+				name: "Database",
+				desc: `The database link (••• → Copy link) or a data source ID. ${ACCESS_HINT}`,
+				visible: isDatabase,
+				control: { type: "text", key: "database", placeholder: "Paste a Notion link" },
+			},
+			{
+				name: "Test connection",
+				desc: "Checks the token and that Notion can find what you linked above.",
+				searchable: false,
+				render: (setting) => {
+					setting.addButton((button) =>
+						button.setButtonText("Test").onClick(async () => {
+							button.setDisabled(true);
+							try {
+								new Notice(await testConnection(this.app, settings));
+							} finally {
+								button.setDisabled(false);
+							}
+						}),
+					);
+				},
+			},
+			{
+				type: "group",
+				heading: "Columns",
+				visible: isDatabase,
+				items: [
+					{
+						name: "Sync tags",
+						desc: "Copy the note's frontmatter tags into a multi-select column.",
+						control: { type: "toggle", key: "syncTags" },
+					},
+					{
+						name: "Tags column",
+						desc: "Name of the multi-select column that receives the tags.",
+						control: { type: "text", key: "tagsProperty" },
+					},
+					{
+						name: "Sync folder",
+						desc: "Write the note's folder path into a select or text column, to group pages by folder.",
+						control: { type: "toggle", key: "syncFolder" },
+					},
+					{
+						name: "Folder column",
+						desc: "Name of the select or text column that receives the folder path.",
+						control: { type: "text", key: "folderProperty" },
+					},
+					{
+						name: "Folder pages",
+						desc:
+							"Optional. A Notion page under which your folder tree is built, each folder showing a table " +
+							"of its notes. Requires Sync folder.",
+						control: { type: "text", key: "rootPage", placeholder: "Paste a Notion link" },
+					},
+				],
+			},
+			{
+				type: "group",
+				heading: "Publishing",
+				items: [
+					{
+						name: "Cover image URL",
+						desc: "Optional. An image URL used as the cover of every published page.",
+						control: { type: "text", key: "coverUrl", placeholder: "Image link" },
+					},
+					{
+						name: "Copy link after publishing",
+						control: { type: "toggle", key: "copyLink" },
+					},
+				],
+			},
+		];
 	}
 
-	private displayDatabaseSettings(): void {
-		const { containerEl } = this;
-		const settings = this.plugin.settings;
-
-		new Setting(containerEl).setName("Columns").setHeading();
-
-		new Setting(containerEl)
-			.setName("Sync tags")
-			.setDesc("Copy the note's frontmatter tags into a multi-select column.")
-			.addToggle((toggle) =>
-				toggle.setValue(settings.syncTags).onChange(async (value) => {
-					settings.syncTags = value;
-					await this.plugin.saveSettings();
-				}),
-			);
-
-		new Setting(containerEl)
-			.setName("Tags column")
-			.setDesc("Name of the multi-select column that receives the tags.")
-			.addText((text) =>
-				text.setValue(settings.tagsProperty).onChange(async (value) => {
-					settings.tagsProperty = value;
-					await this.plugin.saveSettings();
-				}),
-			);
-
-		new Setting(containerEl)
-			.setName("Sync folder")
-			.setDesc("Write the note's folder path into a select or text column, to group pages by folder.")
-			.addToggle((toggle) =>
-				toggle.setValue(settings.syncFolder).onChange(async (value) => {
-					settings.syncFolder = value;
-					await this.plugin.saveSettings();
-				}),
-			);
-
-		new Setting(containerEl)
-			.setName("Folder column")
-			.setDesc("Name of the select or text column that receives the folder path.")
-			.addText((text) =>
-				text.setValue(settings.folderProperty).onChange(async (value) => {
-					settings.folderProperty = value;
-					await this.plugin.saveSettings();
-				}),
-			);
-
-		this.addLinkSetting(
-			"Folder pages",
-			"Optional. A Notion page under which your folder tree is built, each folder showing a table of its " +
-				"notes. Requires Sync folder.",
-			"rootPage",
-		);
-	}
-
-	private addLinkSetting(name: string, desc: string, key: "rootPage" | "database"): void {
-		new Setting(this.containerEl)
-			.setName(name)
-			.setDesc(desc)
-			.addText((text) =>
-				text
-					.setPlaceholder("Paste a Notion link")
-					.setValue(this.plugin.settings[key])
-					.onChange(async (value) => {
-						this.plugin.settings[key] = value.trim();
-						await this.plugin.saveSettings();
-					}),
-			);
+	/**
+	 * The default implementation saves only the settings object; this plugin stores its sync
+	 * state in the same data file, so saving goes through the plugin.
+	 */
+	async setControlValue(key: string, value: unknown): Promise<void> {
+		Object.assign(this.plugin.settings, { [key]: value });
+		await this.plugin.saveSettings();
 	}
 }
 

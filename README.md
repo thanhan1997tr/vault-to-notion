@@ -5,7 +5,7 @@ database — and keep them updated in place.
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Notion API](https://img.shields.io/badge/Notion%20API-2026--03--11-black.svg)](https://developers.notion.com/reference/versioning)
-[![Obsidian](https://img.shields.io/badge/Obsidian-%E2%89%A5%201.11.4-7c3aed.svg)](https://obsidian.md)
+[![Obsidian](https://img.shields.io/badge/Obsidian-%E2%89%A5%201.13.0-7c3aed.svg)](https://obsidian.md)
 ![Platforms](https://img.shields.io/badge/platforms-desktop%20%7C%20mobile-lightgrey.svg)
 
 **Your vault in Obsidian → the same structure in Notion** (page tree mode):
@@ -96,7 +96,7 @@ frontmatter), so it travels with the note across devices.
 
 ## Requirements
 
-- Obsidian **1.11.4** or later (desktop or mobile) — the first version with secret storage.
+- Obsidian **1.13.0** or later (desktop or mobile).
 - A Notion account, and a Notion **API token** — see [step 1](#1-create-a-notion-api-token).
 
 ## Installation
@@ -369,6 +369,14 @@ to read the page or database you configure and to create, update and move pages 
 plugin sends the content of the notes you publish — nothing else, and only when you publish.
 There is no telemetry and no other server involved.
 
+What the plugin accesses on your device:
+
+- **Notes**: only the note you publish, or the notes inside the folder you publish. It does
+  not scan the rest of the vault. It writes `notion_id` and `notion_url` into the frontmatter
+  of the notes it publishes.
+- **Clipboard**: after publishing a single note it *writes* the page's link to the clipboard.
+  It never reads the clipboard. Turn off **Copy link after publishing** to disable this.
+
 Your API token is kept in Obsidian's
 [secret storage](https://docs.obsidian.md/plugins/guides/secret-storage) on this device, not in
 the plugin's `data.json`, so it does not end up in vault backups, sync or Git. Secret storage is
@@ -395,8 +403,14 @@ the plugin.
 | `src/markdown.ts` | Obsidian → Notion-flavoured Markdown conversion |
 | `src/settings.ts` | Settings and settings tab |
 
-**Releasing**: run `npm version <x.y.z>` and push the tag. The GitHub workflow builds the plugin
-and attaches `main.js` and `manifest.json` to a release named after the version.
+**Releasing**: run `npm version <x.y.z>` and push the tag. The GitHub workflow lints and builds
+the plugin, signs [build provenance attestations](https://docs.github.com/en/actions/security-guides/using-artifact-attestations-to-establish-provenance-for-builds)
+for the release files, and attaches `main.js` and `manifest.json` to a release named after the
+version. To check that a downloaded `main.js` was built from this repository:
+
+```bash
+gh attestation verify main.js --repo thanhan1997tr/vault-to-notion
+```
 
 ## License
 
